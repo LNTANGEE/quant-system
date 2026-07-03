@@ -1,79 +1,87 @@
 # 量化系统长期稳定部署
 
-本系统是 Streamlit 应用，手机微信要直接打开，必须部署到公网地址，不能只用 `localhost`。
+你截图里的 `https://quant-system.onrender.com` 返回 `Not Found`，含义很明确：Render 上还没有成功创建并绑定这个 Web Service，或者你打开的不是 Render 实际分配的服务地址。
 
-## 推荐方案：Render/Railway/Docker 长期部署
+现在项目已经补齐仓库根目录部署入口：
 
-项目已包含：
+- 根目录 `Dockerfile`
+- 根目录 `render.yaml`
+- 根目录 `.dockerignore`
+- 根目录 `.gitignore`
+- 应用目录 `stock_ai_system/`
 
-- `Dockerfile`
-- `render.yaml`
-- `.streamlit/config.toml`
-- `Procfile`
+这样部署时，Render 会从仓库根目录直接识别服务，不需要手动指定子目录。
 
-当前配置已支持：
+## 稳定方案：Render Blueprint
 
-- 服务名：`quant-system`
-- 云平台动态端口：读取 `$PORT`
-- SQLite 数据目录：`/app/local_data`
-- Render 持久磁盘挂载：`/app/local_data`
+适合手机微信长期打开。
 
-部署步骤：
+1. 把当前整个目录推送到 GitHub 仓库，不要只上传 `stock_ai_system` 子目录。
+2. 打开 Render，选择 `New` -> `Blueprint`。
+3. 选择刚才的 GitHub 仓库。
+4. Render 会读取根目录的 `render.yaml`。
+5. 服务名称为 `quant-system`。
+6. 部署完成后，以 Render 页面显示的正式 URL 为准。
 
-1. 把 `stock_ai_system` 上传到 GitHub 仓库。
-2. 打开 Render 或 Railway，新建 Web Service。
-3. 选择 GitHub 仓库，并选择 Docker 部署。
-4. 平台会自动读取 `Dockerfile`，端口使用 `$PORT`。
-5. 部署完成后，平台会给一个长期可访问的 `https://...` 地址。
-6. 把该地址复制到微信即可打开。
-
-Render 如果要保存自选股、成本价和操作记录，建议使用带持久磁盘的实例。当前 `render.yaml` 已配置 `quant-system-data` 磁盘，挂载到 `/app/local_data`。
-
-建议环境变量：
+如果 `quant-system.onrender.com` 已经被占用或服务没有创建成功，Render 可能会分配类似下面的地址：
 
 ```text
-AKSHARE_TIMEOUT_SECONDS=4
-FAST_FALLBACK_FIRST=1
-TUSHARE_TOKEN=你的Token，可选
+https://quant-system-xxxx.onrender.com
 ```
 
-## 可选方案：Streamlit Community Cloud
+请以 Render 控制台里的 `Service URL` 为准。
 
-1. 上传代码到 GitHub。
-2. 打开 https://share.streamlit.io
-3. New app。
-4. Main file path 填：
+## 当前 Render 配置
+
+```yaml
+services:
+  - type: web
+    name: quant-system
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /
+    disk:
+      name: quant-system-data
+      mountPath: /app/local_data
+      sizeGB: 1
+```
+
+SQLite 数据会保存到：
 
 ```text
-app.py
+/app/local_data
 ```
 
-5. App URL 生成后，可以直接在微信打开。
+这需要 Render 持久磁盘，建议使用非免费实例，否则自选股、成本价、卖出记录等本地数据可能无法长期保存。
 
-注意：免费平台可能会休眠，第一次打开会慢；SQLite 本地文件也可能不适合长期保存关键数据。
+## 为什么临时链接不稳定
 
-## 临时方案：本机 Cloudflare Tunnel
+`trycloudflare.com` 是临时隧道：
 
-只适合临时给手机微信打开，不适合长期稳定使用。电脑关机、网络断开、进程退出、临时域名过期都会导致链接打不开。
+- 电脑关机后会断；
+- 网络波动后会断；
+- 重启后网址会变；
+- 不适合作为长期给微信打开的网址。
 
-安装 `cloudflared` 后，在项目目录运行：
+长期稳定必须使用 Render、Railway、云服务器或自己的域名。
+
+## 本地运行
 
 ```powershell
-.\run_public_cloudflare.ps1
+cd stock_ai_system
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-终端出现类似：
+本地地址：
 
 ```text
-https://xxxx.trycloudflare.com
+http://localhost:8501
 ```
 
-复制这个链接到微信即可打开。
+这个地址只能在本机打开，不能作为手机微信长期访问地址。
 
-长期稳定网址请使用 Render、Railway、云服务器或自己的域名，不要依赖 `trycloudflare.com` 临时链接。
+## 风险提示
 
-## 数据和安全说明
-
-- 第一版数据库是 SQLite，本地部署时数据保存在本机。
-- 云端部署时，免费平台文件系统可能不持久，长期使用建议换成云数据库或挂载持久磁盘。
-- 本系统只做量化概率分析，不构成投资建议，股市有风险，操作由用户自行承担。
+本系统只做量化概率分析，不构成投资建议，股市有风险，操作由用户自行承担。
