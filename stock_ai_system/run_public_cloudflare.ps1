@@ -41,4 +41,4 @@ Start-Process -FilePath $Python.Source `
 Start-Sleep -Seconds 5
 
 Write-Host "正在创建临时公网链接，出现 https://*.trycloudflare.com 后即可复制到微信打开。"
-& $Cloudflared.FullName tunnel --url http://127.0.0.1:8501
+& $Cloudflared.FullName tunnel --protocol http2 --url http://127.0.0.1:8501
