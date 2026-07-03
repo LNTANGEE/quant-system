@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: quant-system
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /
+    disk:
+      name: quant-system-data
+      mountPath: /app/local_data
+      sizeGB: 1
+    envVars:
+      - key: AKSHARE_TIMEOUT_SECONDS
+        value: "4"
+      - key: FAST_FALLBACK_FIRST
+        value: "1"
+      - key: PYTHONIOENCODING
+        value: "utf-8"
+      - key: TZ
+        value: "Asia/Shanghai"
