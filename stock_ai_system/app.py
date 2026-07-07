@@ -50,6 +50,8 @@ def _overview_rows(results: list[dict], watchlist: list[dict]) -> pd.DataFrame:
                     "中期": "--",
                     "长期": "--",
                     "今日预估最低价": "--",
+                    "今日预估最高价": "--",
+                    "最高触达概率": "--",
                     "今日低吸区": "--",
                     "今日高抛区": "--",
                     "管家信号": "数据不足",
@@ -67,6 +69,7 @@ def _overview_rows(results: list[dict], watchlist: list[dict]) -> pd.DataFrame:
         quote = item["quote"]
         potential = item["potential"]
         low_model = item["low_model"]
+        high_model = item.get("high_model", {})
         t_strategy = item["t_strategy"]
         risk = item["risk"]
         main_force = item["main_force"]
@@ -85,6 +88,8 @@ def _overview_rows(results: list[dict], watchlist: list[dict]) -> pd.DataFrame:
                 "长期": f"{potential.get('long_score', 0):.0f}",
                 "综合": f"{potential.get('comprehensive_score', 0):.0f}",
                 "今日预估最低价": format_zone(low_model.get("estimated_low_zone")),
+                "今日预估最高价": format_zone(high_model.get("estimated_high_zone")),
+                "最高触达概率": format_pct(high_model.get("estimated_high_reach_probability")),
                 "今日低吸区": format_zone(low_model.get("first_low_zone")),
                 "今日高抛区": format_zone(t_strategy.get("high_sell_zone")),
                 "管家信号": f"{steward.get('signal')} / {steward.get('signal_level')}",

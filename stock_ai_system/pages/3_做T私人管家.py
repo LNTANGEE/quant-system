@@ -37,6 +37,7 @@ def _steward_row(result: dict, watch: dict, today_count: int) -> dict:
             "做T判断": "等待行情恢复",
             "低吸区": "--",
             "高抛区": "--",
+            "预估最高区": "--",
             "可买": "--",
             "可卖": "--",
             "何时进": result.get("error", ""),
@@ -46,6 +47,7 @@ def _steward_row(result: dict, watch: dict, today_count: int) -> dict:
     steward = build_steward_advice(result, watch, today_count)
     quote = result["quote"]
     strategy = result["t_strategy"]
+    high_model = result.get("high_model", {})
     return {
         "代码": result["code"],
         "名称": quote.get("name", watch.get("name", "")),
@@ -54,6 +56,7 @@ def _steward_row(result: dict, watch: dict, today_count: int) -> dict:
         "做T判断": steward["signal_level"],
         "低吸区": format_zone(strategy.get("low_buy_zone")),
         "高抛区": format_zone(strategy.get("high_sell_zone")),
+        "预估最高区": format_zone(high_model.get("estimated_high_zone")),
         "可买": f"{steward['buy_shares']}股 / {format_amount(steward['buy_amount'])}",
         "可卖": f"{steward['sell_shares']}股 / {format_amount(steward['sell_amount'])}",
         "何时进": steward["entry_timing"],
@@ -112,6 +115,7 @@ with st.spinner("私人管家正在计算分时、低吸区、高抛区和做T�
 quote = result["quote"]
 t_strategy = result["t_strategy"]
 low_model = result["low_model"]
+high_model = result.get("high_model", {})
 main_force = result["main_force"]
 risk = result["risk"]
 potential = result["potential"]
@@ -132,14 +136,16 @@ position_cols[1].metric("成本价", format_price(steward["cost_price"], 3))
 position_cols[2].metric("持仓市值", format_amount(steward["position_value"]))
 position_cols[3].metric("相对成本", f"{steward['position_profit_pct']:.2f}%")
 
-trade_cols = st.columns(4)
+trade_cols = st.columns(5)
 trade_cols[0].metric("可低吸股数/金额", f"{steward['buy_shares']}股 / {format_amount(steward['buy_amount'])}")
 trade_cols[1].metric("可高抛股数/金额", f"{steward['sell_shares']}股 / {format_amount(steward['sell_amount'])}")
 trade_cols[2].metric("低点触达概率", f"{low_model.get('estimated_low_reach_probability')}%")
-trade_cols[3].metric("模型置信度", f"{low_model.get('estimated_low_confidence')}%")
+trade_cols[3].metric("预估最高区", format_zone(high_model.get("estimated_high_zone")))
+trade_cols[4].metric("高点触达概率", f"{high_model.get('estimated_high_reach_probability')}%")
 
 st.success(steward["current_advice"])
 st.info(steward["low_judgement"])
+st.info(steward.get("high_judgement", ""))
 st.subheader("实时提醒")
 for alert in steward["realtime_alerts"]:
     st.warning(alert) if "风控" in alert or "弱势" in alert else st.info(alert)
@@ -158,6 +164,10 @@ st.dataframe(
         [
             {"项目": "今日预估最低价区间", "内容": format_zone(low_model.get("estimated_low_zone"))},
             {"项目": "基准/弱势/恐慌低点", "内容": f"{format_price(low_model.get('base_case_low'))} / {format_price(low_model.get('weak_case_low'))} / {format_price(low_model.get('panic_case_low'))}"},
+            {"项目": "今日预估最高价区间", "内容": format_zone(high_model.get("estimated_high_zone"))},
+            {"项目": "基准/强势/冲高高点", "内容": f"{format_price(high_model.get('base_case_high'))} / {format_price(high_model.get('strong_case_high'))} / {format_price(high_model.get('spike_case_high'))}"},
+            {"项目": "最高区间触达概率", "内容": f"{high_model.get('estimated_high_reach_probability')}%"},
+            {"项目": "今日再创新高概率", "内容": f"{high_model.get('new_high_probability')}%"},
             {"项目": "今日低吸区", "内容": format_zone(t_strategy.get("low_buy_zone"))},
             {"项目": "今日高抛区", "内容": format_zone(t_strategy.get("high_sell_zone"))},
             {"项目": "正T建议", "内容": t_strategy.get("positive_t")},

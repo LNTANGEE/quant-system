@@ -9,6 +9,7 @@ import pandas as pd
 from data.fundamental_data import get_basic_fundamentals
 from data.sector_data import get_market_status, get_sector_context
 from data.stock_data import get_hist_daily, get_minute_kline, get_quote, get_realtime_quotes, get_stock_name
+from models.high_price_model import estimate_high_price_zones
 from models.low_price_model import estimate_low_price_zones
 from models.main_force_score import score_main_force
 from models.potential_score import build_potential_record
@@ -109,6 +110,12 @@ def analyze_stock(
         quote,
         market_risk_bias=market.get("risk_bias", 0.0),
     )
+    high_model = estimate_high_price_zones(
+        daily,
+        minute,
+        quote,
+        market_risk_bias=market.get("risk_bias", 0.0),
+    )
     main_force = score_main_force(daily, minute, quote, sector)
     t_strategy = build_t_strategy(quote, daily, minute, low_model, main_force, risk, watch, sector)
     potential = build_potential_record(
@@ -133,6 +140,7 @@ def analyze_stock(
         "fundamentals": fundamentals,
         "risk": risk,
         "low_model": low_model,
+        "high_model": high_model,
         "main_force": main_force,
         "t_strategy": t_strategy,
         "potential": potential,

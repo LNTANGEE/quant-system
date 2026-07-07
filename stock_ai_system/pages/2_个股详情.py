@@ -42,6 +42,7 @@ quote = result["quote"]
 daily = result["daily"]
 minute = result["minute"]
 low_model = result["low_model"]
+high_model = result.get("high_model", {})
 t_strategy = result["t_strategy"]
 main_force = result["main_force"]
 risk = result["risk"]
@@ -59,12 +60,14 @@ metric_cols[3].metric("成交额", format_amount(quote.get("amount")))
 metric_cols[4].metric("量比/换手", f"{format_price(quote.get('volume_ratio'))} / {format_pct(quote.get('turnover'))}")
 metric_cols[5].metric("风险等级", f"{risk.get('risk_level')}({risk.get('risk_score')})")
 
-forecast_cols = st.columns(4)
+forecast_cols = st.columns(5)
 forecast_cols[0].metric("今日预估最低价区间", format_zone(low_model.get("estimated_low_zone")))
 forecast_cols[1].metric("触达概率", format_pct(low_model.get("estimated_low_reach_probability")))
-forecast_cols[2].metric("模型置信度", format_pct(low_model.get("estimated_low_confidence")))
-forecast_cols[3].metric("做T执行计划", t_strategy.get("current_action", "观察"))
+forecast_cols[2].metric("今日预估最高价区间", format_zone(high_model.get("estimated_high_zone")))
+forecast_cols[3].metric("最高触达概率", format_pct(high_model.get("estimated_high_reach_probability")))
+forecast_cols[4].metric("做T执行计划", t_strategy.get("current_action", "观察"))
 st.caption(low_model.get("estimated_low_label", ""))
+st.caption(high_model.get("estimated_high_label", ""))
 st.info(t_strategy.get("observe_plan", ""))
 
 st.subheader("私人管家")
@@ -80,6 +83,7 @@ position_cols[2].metric("持仓市值", format_amount(steward["position_value"])
 position_cols[3].metric("相对成本", f"{steward['position_profit_pct']:.2f}%")
 st.success(steward["current_advice"])
 st.info(steward["low_judgement"])
+st.info(steward.get("high_judgement", ""))
 for alert in steward["realtime_alerts"]:
     st.warning(alert) if "风控" in alert or "弱势" in alert else st.info(alert)
 entry_col, exit_col = st.columns(2)
@@ -145,6 +149,29 @@ with tabs[2]:
     cols[0].metric("今日预估最低价区间", format_zone(low_model.get("estimated_low_zone")))
     cols[1].metric("第一低位区", format_zone(low_model.get("first_low_zone")))
     cols[2].metric("极限低位区", format_zone(low_model.get("extreme_low_zone")))
+    high_cols = st.columns(3)
+    high_cols[0].metric("今日预估最高价区间", format_zone(high_model.get("estimated_high_zone")))
+    high_cols[1].metric("正常反弹高位区", format_zone(high_model.get("first_high_zone")))
+    high_cols[2].metric("极限高位观察区", format_zone(high_model.get("extreme_high_zone")))
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"项目": "基准预估高点", "值": format_price(high_model.get("base_case_high"))},
+                {"项目": "强势预估高点", "值": format_price(high_model.get("strong_case_high"))},
+                {"项目": "冲高回落观察高点", "值": format_price(high_model.get("spike_case_high"))},
+                {"项目": "预估最高区间触达概率", "值": format_pct(high_model.get("estimated_high_reach_probability"))},
+                {"项目": "高位模型置信度", "值": format_pct(high_model.get("estimated_high_confidence"))},
+                {"项目": "当前价距离第一高位区", "值": format_pct(high_model.get("distance_to_first_high_pct"))},
+                {"项目": "当前价距离第二高位区", "值": format_pct(high_model.get("distance_to_second_high_pct"))},
+                {"项目": "今日再创新高概率", "值": format_pct(high_model.get("new_high_probability"))},
+                {"项目": "突破第一高位区概率", "值": format_pct(high_model.get("break_first_high_probability"))},
+                {"项目": "突破第二高位区概率", "值": format_pct(high_model.get("break_second_high_probability"))},
+                {"项目": "明日惯性高开概率", "值": format_pct(high_model.get("tomorrow_gap_up_probability"))},
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
     st.dataframe(
         pd.DataFrame(
             [

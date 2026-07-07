@@ -40,6 +40,7 @@ def build_steward_advice(
     watch = watch or {}
     quote = result.get("quote", {})
     low_model = result.get("low_model", {})
+    high_model = result.get("high_model", {})
     strategy = result.get("t_strategy", {})
     risk = result.get("risk", {})
     potential = result.get("potential", {})
@@ -65,6 +66,8 @@ def build_steward_advice(
     risk_score = to_float(risk.get("risk_score"), 50)
     reach_probability = to_float(low_model.get("estimated_low_reach_probability"))
     confidence = to_float(low_model.get("estimated_low_confidence"))
+    high_reach_probability = to_float(high_model.get("estimated_high_reach_probability"))
+    high_confidence = to_float(high_model.get("estimated_high_confidence"))
     position_profit_pct = safe_div(price - cost_price, cost_price) * 100 if cost_price > 0 and price > 0 else 0.0
     position_value = price * holding_shares if price > 0 and holding_shares > 0 else 0.0
 
@@ -153,13 +156,15 @@ def build_steward_advice(
     if sell_triggered and sell_shares > 0 and not forbid:
         exit_timing = (
             f"当前价已接近/进入高抛触发区{format_zone(high_zone)}，可按观察价{format_price(sell_price)}、"
-            f"约{sell_shares}股、{format_amount(sell_amount)}评估高抛或反T。"
+            f"约{sell_shares}股、{format_amount(sell_amount)}评估高抛或反T；"
+            f"今日预估最高区间{format_zone(high_model.get('estimated_high_zone'))}。"
         )
     else:
         distance_to_sell = _distance_pct(price, sell_price)
         exit_timing = (
             f"等待反弹到高抛观察价{format_price(sell_price)}附近，约还差{distance_to_sell:.2f}%；"
-            f"止盈观察线{format_price(take_profit)}。"
+            f"今日预估最高区间{format_zone(high_model.get('estimated_high_zone'))}，"
+            f"触达概率约{high_reach_probability:.1f}%，止盈观察线{format_price(take_profit)}。"
         )
 
     if stop_triggered:
@@ -193,6 +198,13 @@ def build_steward_advice(
         f"触达概率约{reach_probability:.1f}%，模型置信度约{confidence:.1f}%。"
         "该区间综合昨日低点、VWAP、MA5/MA10/MA20、ATR、布林下轨、支撑压力和市场弱势修正生成。"
     )
+    high_judgement = (
+        f"今日最高价概率判断：预估区间{format_zone(high_model.get('estimated_high_zone'))}，"
+        f"基准/强势/冲高回落高点分别为{format_price(high_model.get('base_case_high'))}/"
+        f"{format_price(high_model.get('strong_case_high'))}/{format_price(high_model.get('spike_case_high'))}，"
+        f"触达概率约{high_reach_probability:.1f}%，模型置信度约{high_confidence:.1f}%。"
+        "该区间综合昨日高点、VWAP、MA5/MA10、ATR、布林上轨、平台压力、量比和市场强弱修正生成。"
+    )
 
     return {
         "signal": signal,
@@ -218,14 +230,16 @@ def build_steward_advice(
         "exit_timing": exit_timing,
         "risk_guard": risk_guard,
         "low_judgement": low_judgement,
+        "high_judgement": high_judgement,
         "trade_size_text": trade_size_text,
         "summary": (
             f"{signal_level}：做T评分{score:.1f}，主力评分{to_float(main_force.get('score')):.1f}，"
             f"短线评分{to_float(potential.get('short_score')):.1f}，风险评分{risk_score:.1f}，"
-            f"最低区间模型置信度{confidence:.1f}%。"
+            f"最低区间置信度{confidence:.1f}%，最高区间置信度{high_confidence:.1f}%。"
         ),
         "next_watch": (
-            f"重点盯{format_zone(low_zone)}低吸区、{format_zone(high_zone)}高抛区；"
+            f"重点盯{format_zone(low_zone)}低吸区、{format_zone(high_zone)}高抛区、"
+            f"{format_zone(high_model.get('estimated_high_zone'))}预估最高区；"
             f"价格进入区间后再结合VWAP、放量和风险等级确认。"
         ),
     }
