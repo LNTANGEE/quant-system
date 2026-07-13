@@ -145,6 +145,8 @@ with tabs[1]:
 with tabs[2]:
     snap = latest_snapshot(daily)
     sr = support_resistance(daily)
+    low_stat = low_model.get("statistical_model", {})
+    high_stat = high_model.get("statistical_model", {})
     cols = st.columns(3)
     cols[0].metric("今日预估最低价区间", format_zone(low_model.get("estimated_low_zone")))
     cols[1].metric("第一低位区", format_zone(low_model.get("first_low_zone")))
@@ -159,6 +161,9 @@ with tabs[2]:
                 {"项目": "基准预估高点", "值": format_price(high_model.get("base_case_high"))},
                 {"项目": "强势预估高点", "值": format_price(high_model.get("strong_case_high"))},
                 {"项目": "冲高回落观察高点", "值": format_price(high_model.get("spike_case_high"))},
+                {"项目": "统计校准高位区", "值": format_zone(high_model.get("statistical_high_zone"))},
+                {"项目": "高位统计样本/有效样本", "值": f"{high_stat.get('sample_size', 0)} / {high_stat.get('effective_sample_size', 0)}"},
+                {"项目": "盘中进度/统计置信度", "值": f"{format_pct(high_stat.get('day_progress', 0) * 100)} / {format_pct(high_stat.get('confidence'))}"},
                 {"项目": "预估最高区间触达概率", "值": format_pct(high_model.get("estimated_high_reach_probability"))},
                 {"项目": "高位模型置信度", "值": format_pct(high_model.get("estimated_high_confidence"))},
                 {"项目": "当前价距离第一高位区", "值": format_pct(high_model.get("distance_to_first_high_pct"))},
@@ -178,6 +183,9 @@ with tabs[2]:
                 {"项目": "基准预估低点", "值": format_price(low_model.get("base_case_low"))},
                 {"项目": "弱势预估低点", "值": format_price(low_model.get("weak_case_low"))},
                 {"项目": "恐慌预估低点", "值": format_price(low_model.get("panic_case_low"))},
+                {"项目": "统计校准低位区", "值": format_zone(low_model.get("statistical_low_zone"))},
+                {"项目": "低位统计样本/有效样本", "值": f"{low_stat.get('sample_size', 0)} / {low_stat.get('effective_sample_size', 0)}"},
+                {"项目": "盘中进度/统计置信度", "值": f"{format_pct(low_stat.get('day_progress', 0) * 100)} / {format_pct(low_stat.get('confidence'))}"},
                 {"项目": "预估最低区间触达概率", "值": format_pct(low_model.get("estimated_low_reach_probability"))},
                 {"项目": "模型置信度", "值": format_pct(low_model.get("estimated_low_confidence"))},
                 {"项目": "当前价距离第一低位区", "值": format_pct(low_model.get("distance_to_first_pct"))},

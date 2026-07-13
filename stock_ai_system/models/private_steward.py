@@ -41,6 +41,8 @@ def build_steward_advice(
     quote = result.get("quote", {})
     low_model = result.get("low_model", {})
     high_model = result.get("high_model", {})
+    low_stat = low_model.get("statistical_model", {})
+    high_stat = high_model.get("statistical_model", {})
     strategy = result.get("t_strategy", {})
     risk = result.get("risk", {})
     potential = result.get("potential", {})
@@ -196,14 +198,16 @@ def build_steward_advice(
         f"基准/弱势/恐慌低点分别为{format_price(low_model.get('base_case_low'))}/"
         f"{format_price(low_model.get('weak_case_low'))}/{format_price(low_model.get('panic_case_low'))}，"
         f"触达概率约{reach_probability:.1f}%，模型置信度约{confidence:.1f}%。"
-        "该区间综合昨日低点、VWAP、MA5/MA10/MA20、ATR、布林下轨、支撑压力和市场弱势修正生成。"
+        f"统计校准样本{low_stat.get('sample_size', 0)}个，有效相似样本{low_stat.get('effective_sample_size', 0)}个。"
+        "该区间综合昨日低点、VWAP、MA5/MA10/MA20、ATR、布林下轨、支撑压力、市场弱势和历史相似日分布生成。"
     )
     high_judgement = (
         f"今日最高价概率判断：预估区间{format_zone(high_model.get('estimated_high_zone'))}，"
         f"基准/强势/冲高回落高点分别为{format_price(high_model.get('base_case_high'))}/"
         f"{format_price(high_model.get('strong_case_high'))}/{format_price(high_model.get('spike_case_high'))}，"
         f"触达概率约{high_reach_probability:.1f}%，模型置信度约{high_confidence:.1f}%。"
-        "该区间综合昨日高点、VWAP、MA5/MA10、ATR、布林上轨、平台压力、量比和市场强弱修正生成。"
+        f"统计校准样本{high_stat.get('sample_size', 0)}个，有效相似样本{high_stat.get('effective_sample_size', 0)}个。"
+        "该区间综合昨日高点、VWAP、MA5/MA10、ATR、布林上轨、平台压力、量比、市场强弱和历史相似日分布生成。"
     )
 
     return {

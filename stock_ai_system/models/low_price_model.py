@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from models.indicators import calculate_intraday_vwap, enrich_indicators, support_resistance
+from models.statistical_range_model import estimate_statistical_extremes
 from utils.helpers import clamp, safe_div, to_float
 
 
@@ -83,6 +84,8 @@ def estimate_low_price_zones(
 
     latest = enriched.iloc[-1]
     prev = enriched.iloc[-2] if len(enriched) >= 2 else latest
+    stat_model = estimate_statistical_extremes(daily_df, minute_df, quote, market_risk_bias)
+    stat_low = stat_model.get("low", {}) if stat_model.get("available") else {}
     price = to_float(quote.get("price"), to_float(latest.get("close")))
     current_low = to_float(quote.get("low"), to_float(latest.get("low")))
     current_high = to_float(quote.get("high"), to_float(latest.get("high")))
@@ -131,6 +134,12 @@ def estimate_low_price_zones(
         second_center - 0.8 * atr14,
     )
 
+    if stat_low:
+        first_center = first_center * 0.58 + to_float(stat_low.get("base"), first_center) * 0.42
+        second_center = second_center * 0.58 + to_float(stat_low.get("weak"), second_center) * 0.42
+        extreme_center = extreme_center * 0.62 + to_float(stat_low.get("panic"), extreme_center) * 0.38
+        width = max(width, to_float(stat_low.get("zone_width"), width) * 0.70)
+
     weakness_shift = atr14 * clamp(market_risk_bias * 2, 0, 0.4)
     first_center -= weakness_shift * 0.25
     second_center -= weakness_shift * 0.45
@@ -152,8 +161,15 @@ def estimate_low_price_zones(
     low_break_pressure += 10 if intraday_position < 0.3 else 0
     low_break_pressure += 8 if volume_ratio > 1.5 and pct_chg < 0 else 0
     low_break_pressure += market_risk_bias * 100
+    low_break_pressure += to_float(stat_low.get("pressure_score"), 0) * 0.35
 
     new_low_prob = clamp(35 + low_break_pressure, 10, 88)
+    if stat_low:
+        new_low_prob = clamp(
+            new_low_prob * 0.55 + to_float(stat_low.get("new_extreme_probability"), new_low_prob) * 0.45,
+            8,
+            90,
+        )
     break_first_prob = clamp(28 + low_break_pressure + max(0, _distance_to_zone(price, first_zone)) * 0.4, 8, 85)
     break_second_prob = clamp(16 + low_break_pressure * 0.75, 5, 72)
     tomorrow_gap_down_prob = clamp(
@@ -166,6 +182,12 @@ def estimate_low_price_zones(
     history_confidence = 18 if len(enriched) >= 120 else 12 if len(enriched) >= 60 else 7
     structure_confidence = 12 if sr.get("support", 0) > 0 and atr14 > 0 else 6
     confidence = clamp(35 + volume_confidence + minute_confidence + history_confidence + structure_confidence, 20, 88)
+    if stat_low:
+        confidence = clamp(
+            confidence * 0.58 + to_float(stat_model.get("confidence"), confidence) * 0.42,
+            20,
+            93,
+        )
 
     base_case_low = min(current_low if current_low > 0 else first_zone["center"], first_zone["center"])
     weak_case_low = min(second_zone["center"], base_case_low - atr14 * 0.15)
@@ -176,9 +198,13 @@ def estimate_low_price_zones(
         + second_zone["center"] * (0.28 + probability_weight * 0.16)
         + extreme_zone["center"] * (0.10 + probability_weight * 0.06)
     )
+    if stat_low:
+        estimated_center = estimated_center * 0.55 + to_float(stat_low.get("estimated"), estimated_center) * 0.45
     if current_low > 0 and current_low < estimated_center:
         estimated_center = current_low * 0.55 + estimated_center * 0.45
     estimated_width = max(width * 0.75, atr14 * (0.08 + probability_weight * 0.04))
+    if stat_low:
+        estimated_width = max(estimated_width, to_float(stat_low.get("zone_width"), estimated_width) * 0.72)
     estimated_low_zone = _zone(estimated_center, estimated_width)
     reach_probability = clamp(
         42
@@ -188,6 +214,12 @@ def estimate_low_price_zones(
         12,
         86,
     )
+    if stat_low:
+        reach_probability = clamp(
+            reach_probability * 0.55 + to_float(stat_low.get("touch_probability"), reach_probability) * 0.45,
+            10,
+            92,
+        )
     estimated_label = _scenario_label(reach_probability, confidence)
 
     return {
@@ -207,11 +239,25 @@ def estimate_low_price_zones(
         "break_first_probability": round(break_first_prob, 1),
         "break_second_probability": round(break_second_prob, 1),
         "tomorrow_gap_down_probability": round(tomorrow_gap_down_prob, 1),
+        "statistical_low_zone": stat_low.get("zone", {}),
+        "statistical_model": {
+            "available": bool(stat_model.get("available")),
+            "model_version": stat_model.get("model_version", ""),
+            "sample_size": stat_model.get("sample_size", 0),
+            "effective_sample_size": stat_model.get("effective_sample_size", 0),
+            "confidence": stat_model.get("confidence", 0),
+            "day_progress": stat_model.get("day_progress", 0),
+            "features": stat_model.get("features", {}),
+            "quantiles_pct": stat_low.get("quantiles_pct", {}),
+        },
         "reference": {
             "vwap": round(to_float(vwap, 0), 2),
             "atr14": round(atr14, 2),
             "support": round(to_float(sr.get("support"), 0), 2),
             "resistance": round(to_float(sr.get("resistance"), 0), 2),
         },
-        "explain": "基于昨日低点、VWAP、均线、ATR、布林下轨和大盘/板块弱势修正生成的概率区间。",
+        "explain": (
+            "基于昨日低点、VWAP、均线、ATR、布林下轨、支撑位、大盘/板块弱势修正，"
+            "并叠加历史相似日分布校准生成的概率区间。"
+        ),
     }

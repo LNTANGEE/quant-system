@@ -54,6 +54,23 @@ def _near(price: float, zone: dict[str, float], pct: float = 0.008) -> bool:
     return abs(price - zone.get("center", 0)) / price <= pct or _inside(price, zone)
 
 
+def _valid_zone(zone: dict | None) -> bool:
+    return bool(zone and to_float(zone.get("low")) > 0 and to_float(zone.get("high")) >= to_float(zone.get("low")))
+
+
+def _blend_zone(primary: dict[str, float], secondary: dict[str, float], secondary_weight: float = 0.55) -> dict[str, float]:
+    if not _valid_zone(primary):
+        return secondary
+    if not _valid_zone(secondary):
+        return primary
+    weight = clamp(secondary_weight, 0, 1)
+    primary_width = max(to_float(primary.get("high")) - to_float(primary.get("low")), 0.01)
+    secondary_width = max(to_float(secondary.get("high")) - to_float(secondary.get("low")), 0.01)
+    center = to_float(primary.get("center")) * (1 - weight) + to_float(secondary.get("center")) * weight
+    width = max(primary_width * 0.5, secondary_width * 0.5) * 0.72 + abs(to_float(primary.get("center")) - to_float(secondary.get("center"))) * 0.18
+    return _zone(center, max(width, center * 0.0025))
+
+
 def _lot_floor(shares: float) -> int:
     return max(int(shares // 100) * 100, 0)
 
@@ -89,14 +106,25 @@ def build_t_strategy(
     risk: dict,
     watch: dict | None = None,
     sector_context: dict | None = None,
+    high_model: dict | None = None,
 ) -> dict:
     quote = quote or {}
     watch = watch or {}
     sector_context = sector_context or {}
+    high_model = high_model or {}
     price = to_float(quote.get("price"), to_float(quote.get("pre_close"), 0))
     low_zone = low_model.get("first_low_zone", {"low": 0, "high": 0, "center": 0})
     second_zone = low_model.get("second_low_zone", {"low": 0, "high": 0, "center": 0})
+    model_low_zone = low_model.get("estimated_low_zone")
+    low_reach_probability = to_float(low_model.get("estimated_low_reach_probability"), 50)
+    break_first_probability = to_float(low_model.get("break_first_probability"), 45)
+    if _valid_zone(model_low_zone):
+        low_weight = 0.64 if low_reach_probability >= 60 or break_first_probability >= 55 else 0.40
+        low_zone = _blend_zone(low_zone, model_low_zone, low_weight)
     high_zone = estimate_high_sell_zone(daily_df, quote)
+    model_high_zone = high_model.get("estimated_high_zone") or high_model.get("first_high_zone")
+    if _valid_zone(model_high_zone):
+        high_zone = _blend_zone(high_zone, model_high_zone, 0.58)
     vwap = calculate_intraday_vwap(minute_df) if minute_df is not None else np.nan
     shares = int(to_float(watch.get("shares"), 0))
     sellable = int(to_float(watch.get("sellable_quantity"), 0))
@@ -104,6 +132,9 @@ def build_t_strategy(
     max_count = int(to_float(watch.get("max_t_trades_per_day"), 1))
     risk_score = to_float(risk.get("risk_score"), 50)
     main_score = to_float(main_force.get("score"), 50)
+    high_reach_probability = to_float(high_model.get("estimated_high_reach_probability"), 50)
+    low_confidence = to_float(low_model.get("estimated_low_confidence"), 45)
+    high_confidence = to_float(high_model.get("estimated_high_confidence"), 45)
 
     low_opportunity = 0.0
     if _inside(price, low_zone):
@@ -114,6 +145,8 @@ def build_t_strategy(
         low_opportunity = 12
     else:
         low_opportunity = max(0, 12 - max(0, price - low_zone.get("high", price)) / max(price, 0.01) * 800)
+    low_opportunity *= 0.82 + clamp(low_reach_probability, 10, 90) / 250
+    low_opportunity *= 0.86 + clamp(low_confidence, 20, 95) / 300
 
     high_opportunity = 0.0
     if _inside(price, high_zone):
@@ -122,6 +155,8 @@ def build_t_strategy(
         high_opportunity = 16
     elif price > high_zone.get("high", 0):
         high_opportunity = 18
+    high_opportunity *= 0.82 + clamp(high_reach_probability, 10, 90) / 250
+    high_opportunity *= 0.86 + clamp(high_confidence, 20, 95) / 300
 
     price_position_points = max(low_opportunity, high_opportunity)
     trend_points = clamp(main_score, 0, 100) * 0.20
@@ -130,6 +165,7 @@ def build_t_strategy(
     sector_label = sector_context.get("sector_strength", "")
     sector_points = 15 if sector_label in {"强势前排", "偏强"} else 9 if sector_label in {"中性", ""} else 5
     risk_points = max(0, 15 * (1 - risk_score / 100))
+    confidence_points = clamp((min(low_confidence, high_confidence) - 35) / 50 * 6, 0, 6)
     stop_loss = second_zone.get("low", 0) * 0.99
     take_profit = high_zone.get("low", 0)
     gain_space = safe_div(take_profit - price, price) * 100
@@ -142,6 +178,7 @@ def build_t_strategy(
         + volume_points
         + sector_points
         + risk_points
+        + confidence_points
         + payoff_points
     )
 
@@ -156,11 +193,16 @@ def build_t_strategy(
         reasons.append("单日最大做T次数设置为0")
     if score < 30:
         reasons.append("做T评分低于30")
+    if min(low_confidence, high_confidence) < 35:
+        reasons.append("高低点模型置信度过低")
 
     forbid = bool(reasons)
     ratio = 0.0
     if not forbid:
-        ratio = 0.25 if score >= 75 else 0.15 if score >= 60 else 0.08 if score >= 45 else 0.0
+        base_ratio = 0.25 if score >= 75 else 0.15 if score >= 60 else 0.08 if score >= 45 else 0.0
+        confidence_scale = clamp(min(low_confidence, high_confidence) / 75, 0.45, 1.12)
+        probability_scale = clamp(max(low_reach_probability, high_reach_probability) / 70, 0.50, 1.08)
+        ratio = min(0.30, base_ratio * confidence_scale * probability_scale)
     buy_budget = min(max_amount, max_amount * ratio) if low_opportunity >= high_opportunity else 0
     sell_budget = min(max_amount, sellable * price * ratio) if high_opportunity >= low_opportunity else 0
     suggested_buy_price = low_zone.get("center", price)
@@ -251,6 +293,10 @@ def build_t_strategy(
         "low_buy_zone": low_zone,
         "second_low_buy_zone": second_zone,
         "high_sell_zone": high_zone,
+        "low_reach_probability": round(low_reach_probability, 1),
+        "high_reach_probability": round(high_reach_probability, 1),
+        "low_confidence": round(low_confidence, 1),
+        "high_confidence": round(high_confidence, 1),
         "positive_t": positive_t,
         "reverse_t": reverse_t,
         "suggested_ratio": round(ratio, 2),

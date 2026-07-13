@@ -117,7 +117,17 @@ def analyze_stock(
         market_risk_bias=market.get("risk_bias", 0.0),
     )
     main_force = score_main_force(daily, minute, quote, sector)
-    t_strategy = build_t_strategy(quote, daily, minute, low_model, main_force, risk, watch, sector)
+    t_strategy = build_t_strategy(
+        quote,
+        daily,
+        minute,
+        low_model,
+        main_force,
+        risk,
+        watch,
+        sector,
+        high_model=high_model,
+    )
     potential = build_potential_record(
         code,
         quote,

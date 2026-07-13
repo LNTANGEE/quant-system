@@ -116,6 +116,8 @@ quote = result["quote"]
 t_strategy = result["t_strategy"]
 low_model = result["low_model"]
 high_model = result.get("high_model", {})
+low_stat = low_model.get("statistical_model", {})
+high_stat = high_model.get("statistical_model", {})
 main_force = result["main_force"]
 risk = result["risk"]
 potential = result["potential"]
@@ -163,9 +165,13 @@ st.dataframe(
     pd.DataFrame(
         [
             {"项目": "今日预估最低价区间", "内容": format_zone(low_model.get("estimated_low_zone"))},
+            {"项目": "统计校准低位区", "内容": format_zone(low_model.get("statistical_low_zone"))},
             {"项目": "基准/弱势/恐慌低点", "内容": f"{format_price(low_model.get('base_case_low'))} / {format_price(low_model.get('weak_case_low'))} / {format_price(low_model.get('panic_case_low'))}"},
             {"项目": "今日预估最高价区间", "内容": format_zone(high_model.get("estimated_high_zone"))},
+            {"项目": "统计校准高位区", "内容": format_zone(high_model.get("statistical_high_zone"))},
             {"项目": "基准/强势/冲高高点", "内容": f"{format_price(high_model.get('base_case_high'))} / {format_price(high_model.get('strong_case_high'))} / {format_price(high_model.get('spike_case_high'))}"},
+            {"项目": "统计样本/有效样本", "内容": f"{low_stat.get('sample_size', 0)} / {low_stat.get('effective_sample_size', 0)}"},
+            {"项目": "盘中进度/统计置信度", "内容": f"{low_stat.get('day_progress', 0) * 100:.0f}% / {low_stat.get('confidence', 0)}%"},
             {"项目": "最高区间触达概率", "内容": f"{high_model.get('estimated_high_reach_probability')}%"},
             {"项目": "今日再创新高概率", "内容": f"{high_model.get('new_high_probability')}%"},
             {"项目": "今日低吸区", "内容": format_zone(t_strategy.get("low_buy_zone"))},
