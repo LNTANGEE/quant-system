@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -22,6 +23,11 @@ from utils.logger import get_logger
 
 
 logger = get_logger(__name__)
+_SHANGHAI_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _china_now() -> datetime:
+    return datetime.now(_SHANGHAI_TZ)
 
 
 def _akshare():
@@ -356,7 +362,7 @@ def _tencent_minute_fallback(code: str) -> pd.DataFrame:
         data = requests.get(url, timeout=AKSHARE_TIMEOUT_SECONDS).json()
         stock_data = data.get("data", {}).get(symbol, {}).get("data", {})
         rows = stock_data.get("data", [])
-        trade_date = stock_data.get("date") or datetime.now().strftime("%Y%m%d")
+        trade_date = stock_data.get("date") or _china_now().strftime("%Y%m%d")
         if not rows:
             return _empty_with_error("Tencent minute fallback returned no rows")
         parsed = []
@@ -392,6 +398,9 @@ def _tencent_minute_fallback(code: str) -> pd.DataFrame:
             prev_amount = cumulative_amount
         df = pd.DataFrame(parsed)
         df.attrs["source"] = "腾讯分钟线备用源"
+        df.attrs["bar_minutes"] = 1
+        df.attrs["volume_unit"] = "hand"
+        df.attrs["is_synthetic_ohlc"] = True
         return df.dropna(subset=["datetime"]).sort_values("datetime").reset_index(drop=True)
     except Exception as exc:
         return _empty_with_error(f"Tencent minute fallback failed: {exc}")
@@ -569,7 +578,7 @@ def get_hist_daily(
     adjust: str = "qfq",
     ttl: int = 3600,
 ) -> pd.DataFrame:
-    today = datetime.now()
+    today = _china_now()
     if end_date is None:
         end_date = today.strftime("%Y%m%d")
     if start_date is None:
@@ -606,8 +615,9 @@ def normalize_minute_columns(df: pd.DataFrame) -> pd.DataFrame:
         "均价": "avg_price",
     }
     out = df.rename(columns=mapping).copy()
-    if "datetime" in out.columns:
-        out["datetime"] = pd.to_datetime(out["datetime"], errors="coerce")
+    if "datetime" not in out.columns:
+        return _empty_with_error("minute data is missing datetime column")
+    out["datetime"] = pd.to_datetime(out["datetime"], errors="coerce")
     out = _numeric(out, ["open", "close", "high", "low", "volume", "amount", "avg_price"])
     if "amount" in out.columns and "volume" in out.columns:
         volume_in_shares = out["volume"].replace(0, np.nan) * 100
@@ -636,7 +646,12 @@ def _cached_minute(
         if str(period) != "1":
             kwargs["adjust"] = adjust
         df = _run_with_timeout(ak.stock_zh_a_hist_min_em, **kwargs)
-        return normalize_minute_columns(df)
+        normalized = normalize_minute_columns(df)
+        normalized.attrs["source"] = f"AKShare {period}分钟线"
+        normalized.attrs["bar_minutes"] = int(period)
+        normalized.attrs["volume_unit"] = "hand"
+        normalized.attrs["is_synthetic_ohlc"] = False
+        return normalized
     except Exception as exc:  # pragma: no cover - external dependency
         logger.warning("fetch minute kline failed: %s, %s", code, exc)
         return _empty_with_error(str(exc))
@@ -649,13 +664,14 @@ def get_minute_kline(
     end_date: str | None = None,
     adjust: str = "",
     ttl: int = 60,
+    use_realtime_fallback: bool = True,
 ) -> pd.DataFrame:
-    now = datetime.now()
+    now = _china_now()
     if end_date is None:
         end_date = now.strftime("%Y-%m-%d %H:%M:%S")
     if start_date is None:
         start_date = (now - timedelta(days=10)).strftime("%Y-%m-%d 09:30:00")
-    if FAST_FALLBACK_FIRST and str(period) in {"1", "5"}:
+    if use_realtime_fallback and FAST_FALLBACK_FIRST and str(period) in {"1", "5"}:
         fallback = _tencent_minute_fallback(code)
         if not fallback.empty:
             return fallback
@@ -667,7 +683,7 @@ def get_minute_kline(
         adjust,
         _bucket(ttl),
     ).copy()
-    if df.empty and str(period) in {"1", "5"}:
+    if df.empty and use_realtime_fallback and str(period) in {"1", "5"}:
         fallback = _tencent_minute_fallback(code)
         if not fallback.empty:
             return fallback
