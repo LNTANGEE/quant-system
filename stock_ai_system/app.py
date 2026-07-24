@@ -116,7 +116,7 @@ with st.sidebar:
     st.header("系统状态")
     st.write("数据源：AKShare")
     st.write("Tushare Pro Token：" + ("已配置" if TUSHARE_TOKEN else "未配置，已预留接口"))
-    auto_refresh = st.checkbox("打开首页时自动刷新行情", value=False)
+    auto_refresh = st.checkbox("打开首页时自动刷新行情", value=True)
     if st.button("刷新首页行情"):
         st.session_state["home_refresh_market"] = True
     st.divider()
