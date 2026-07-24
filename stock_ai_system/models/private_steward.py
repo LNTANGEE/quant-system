@@ -41,6 +41,8 @@ def build_steward_advice(
     quote = result.get("quote", {})
     low_model = result.get("low_model", {})
     high_model = result.get("high_model", {})
+    next_hour = result.get("next_hour_high", {})
+    next_hour_available = bool(next_hour.get("available"))
     low_stat = low_model.get("statistical_model", {})
     high_stat = high_model.get("statistical_model", {})
     strategy = result.get("t_strategy", {})
@@ -70,6 +72,9 @@ def build_steward_advice(
     confidence = to_float(low_model.get("estimated_low_confidence"))
     high_reach_probability = to_float(high_model.get("estimated_high_reach_probability"))
     high_confidence = to_float(high_model.get("estimated_high_confidence"))
+    next_hour_horizon = int(to_float(next_hour.get("horizon_minutes"), 0))
+    next_hour_probability = to_float(next_hour.get("break_day_high_probability"))
+    next_hour_confidence = to_float(next_hour.get("confidence"))
     position_profit_pct = safe_div(price - cost_price, cost_price) * 100 if cost_price > 0 and price > 0 else 0.0
     position_value = price * holding_shares if price > 0 and holding_shares > 0 else 0.0
 
@@ -168,6 +173,12 @@ def build_steward_advice(
             f"今日预估最高区间{format_zone(high_model.get('estimated_high_zone'))}，"
             f"触达概率约{high_reach_probability:.1f}%，止盈观察线{format_price(take_profit)}。"
         )
+    if next_hour_available:
+        exit_timing += (
+            f" 短时参考：未来{next_hour_horizon}个交易分钟预估最高区间"
+            f"{format_zone(next_hour.get('predicted_high_zone'))}，"
+            f"突破今日高点概率约{next_hour_probability:.1f}%。"
+        )
 
     if stop_triggered:
         risk_guard = f"当前价接近/跌破止损观察线{format_price(stop_loss)}，优先降低做T频率，避免扩大失败成本。"
@@ -209,6 +220,22 @@ def build_steward_advice(
         f"统计校准样本{high_stat.get('sample_size', 0)}个，有效相似样本{high_stat.get('effective_sample_size', 0)}个。"
         "该区间综合昨日高点、VWAP、MA5/MA10、ATR、布林上轨、平台压力、量比、市场强弱和历史相似日分布生成。"
     )
+    if next_hour_available:
+        next_hour_high_judgement = (
+            f"未来{next_hour_horizon}个交易分钟最高价判断：预估最高价"
+            f"{format_price(next_hour.get('predicted_high'))}，区间"
+            f"{format_zone(next_hour.get('predicted_high_zone'))}，"
+            f"较现价预期上行{to_float(next_hour.get('expected_upside_pct')):.2f}%，"
+            f"突破今日高点概率{next_hour_probability:.1f}%，模型置信度{next_hour_confidence:.1f}%；"
+            f"预测窗口{next_hour.get('window_start', '--')}至{next_hour.get('window_end', '--')}，"
+            f"样本/有效样本{next_hour.get('sample_size', 0)}/"
+            f"{next_hour.get('effective_sample_size', 0)}。"
+        )
+    else:
+        next_hour_high_judgement = (
+            "未来一小时最高价判断暂不可用："
+            f"{next_hour.get('label') or next_hour.get('explain') or '分钟行情不足'}"
+        )
 
     return {
         "signal": signal,
@@ -235,6 +262,7 @@ def build_steward_advice(
         "risk_guard": risk_guard,
         "low_judgement": low_judgement,
         "high_judgement": high_judgement,
+        "next_hour_high_judgement": next_hour_high_judgement,
         "trade_size_text": trade_size_text,
         "summary": (
             f"{signal_level}：做T评分{score:.1f}，主力评分{to_float(main_force.get('score')):.1f}，"
@@ -243,7 +271,14 @@ def build_steward_advice(
         ),
         "next_watch": (
             f"重点盯{format_zone(low_zone)}低吸区、{format_zone(high_zone)}高抛区、"
-            f"{format_zone(high_model.get('estimated_high_zone'))}预估最高区；"
+            f"{format_zone(high_model.get('estimated_high_zone'))}今日预估最高区"
+            + (
+                f"、{format_zone(next_hour.get('predicted_high_zone'))}"
+                f"未来{next_hour_horizon}交易分钟最高区"
+                if next_hour_available
+                else ""
+            )
+            + "；"
             f"价格进入区间后再结合VWAP、放量和风险等级确认。"
         ),
     }
